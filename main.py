@@ -1,6 +1,6 @@
 import os
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Depends
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -26,6 +26,62 @@ app = FastAPI(title="Task API - Assignment 4")
 class AuthRequest(BaseModel):
     email: str
     password: str
+
+
+# -------------------------
+# Authentication dependency
+# -------------------------
+
+def get_current_user(authorization: str | None = Header(default=None)):
+    """
+    Reusable authentication dependency.
+
+    It:
+    1. Checks for the Authorization header.
+    2. Checks for the Bearer format.
+    3. Extracts the access token.
+    4. Verifies the token with Supabase.
+    5. Returns the authenticated user.
+    """
+
+    # Check whether Authorization header exists
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Access token required"
+        )
+
+    # Check Bearer format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Access token required"
+        )
+
+    # Extract token
+    token = authorization.replace("Bearer ", "", 1).strip()
+
+    # Check that token exists
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Access token required"
+        )
+
+    # Verify token with Supabase
+    try:
+        response = supabase.auth.get_user(token)
+
+        if response.user is None:
+            raise Exception("User not found")
+
+        return response.user
+
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
 
 
 # -------------------------
@@ -112,6 +168,27 @@ def login(request: AuthRequest):
 
 
 # -------------------------
+# Logout
+# -------------------------
+
+@app.post("/auth/logout", status_code=204)
+def logout(user=Depends(get_current_user)):
+    """
+    Log out the currently authenticated user.
+    """
+
+    try:
+        supabase.auth.sign_out()
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Logout failed"
+        )
+
+    return None
+
+
+# -------------------------
 # Public route
 # -------------------------
 
@@ -123,54 +200,29 @@ def public_info():
 
 
 # -------------------------
-# Protected route
+# Protected routes
 # -------------------------
 
 @app.get("/protected/profile")
-def protected_profile(authorization: str | None = Header(default=None)):
+def protected_profile(user=Depends(get_current_user)):
+    """
+    Return safe information about the authenticated user.
+    """
 
-    # Check whether the Authorization header exists
-    if not authorization:
-        raise HTTPException(
-            status_code=401,
-            detail="Access token required"
-        )
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at
+    }
 
-    # Check that the header uses Bearer format
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401,
-            detail="Access token required"
-        )
 
-    # Extract the token from "Bearer <token>"
-    token = authorization.replace("Bearer ", "", 1).strip()
+@app.get("/protected/dashboard")
+def protected_dashboard(user=Depends(get_current_user)):
+    """
+    Example of another protected route.
+    """
 
-    # Make sure a token was actually provided
-    if not token:
-        raise HTTPException(
-            status_code=401,
-            detail="Access token required"
-        )
-
-    # Verify the access token with Supabase
-    try:
-        response = supabase.auth.get_user(token)
-
-        if response.user is None:
-            raise Exception("User not found")
-
-        user = response.user
-
-        # Return only safe user information
-        return {
-            "id": user.id,
-            "email": user.email,
-            "created_at": user.created_at
-        }
-
-    except Exception:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or expired token"
-        )
+    return {
+        "message": "Welcome to your protected dashboard!",
+        "user_id": user.id
+    }
