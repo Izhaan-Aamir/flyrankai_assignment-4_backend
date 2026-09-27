@@ -1,12 +1,13 @@
 import os
 
 from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
 
-# Load variables from .env
+# Load environment variables
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -15,60 +16,35 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 # Create Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Bearer authentication for Swagger
+security = HTTPBearer()
 
+# Create FastAPI application
 app = FastAPI(title="Task API - Assignment 4")
 
 
-# -------------------------
-# Request models
-# -------------------------
-
+# Request model for authentication
 class AuthRequest(BaseModel):
     email: str
     password: str
 
 
-# -------------------------
-# Authentication dependency
-# -------------------------
-
-def get_current_user(authorization: str | None = Header(default=None)):
+# Reusable authentication dependency
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
     """
     Reusable authentication dependency.
 
     It:
-    1. Checks for the Authorization header.
-    2. Checks for the Bearer format.
-    3. Extracts the access token.
-    4. Verifies the token with Supabase.
-    5. Returns the authenticated user.
+    1. Gets the Bearer token from the Authorization header.
+    2. Extracts the access token.
+    3. Verifies the token with Supabase.
+    4. Returns the authenticated user.
     """
 
-    # Check whether Authorization header exists
-    if not authorization:
-        raise HTTPException(
-            status_code=401,
-            detail="Access token required"
-        )
+    token = credentials.credentials
 
-    # Check Bearer format
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401,
-            detail="Access token required"
-        )
-
-    # Extract token
-    token = authorization.replace("Bearer ", "", 1).strip()
-
-    # Check that token exists
-    if not token:
-        raise HTTPException(
-            status_code=401,
-            detail="Access token required"
-        )
-
-    # Verify token with Supabase
     try:
         response = supabase.auth.get_user(token)
 
@@ -84,30 +60,22 @@ def get_current_user(authorization: str | None = Header(default=None)):
         )
 
 
-# -------------------------
-# Basic routes
-# -------------------------
-
+# Root endpoint
 @app.get("/")
 def root():
-    return {
-        "message": "Task API with Supabase Auth"
-    }
+    return {"message": "Task API with Supabase Auth"}
 
 
+# Health endpoint
 @app.get("/health")
 def health():
-    return {
-        "status": "ok"
-    }
+    return {"status": "ok"}
 
 
-# -------------------------
-# Authentication routes
-# -------------------------
-
+# Signup endpoint
 @app.post("/auth/signup", status_code=201)
 def signup(request: AuthRequest):
+
     if not request.email.strip() or not request.password.strip():
         raise HTTPException(
             status_code=400,
@@ -141,8 +109,10 @@ def signup(request: AuthRequest):
         )
 
 
+# Login endpoint
 @app.post("/auth/login")
 def login(request: AuthRequest):
+
     if not request.email.strip() or not request.password.strip():
         raise HTTPException(
             status_code=400,
@@ -167,18 +137,13 @@ def login(request: AuthRequest):
         )
 
 
-# -------------------------
-# Logout
-# -------------------------
-
+# Logout endpoint
 @app.post("/auth/logout", status_code=204)
 def logout(user=Depends(get_current_user)):
-    """
-    Log out the currently authenticated user.
-    """
 
     try:
         supabase.auth.sign_out()
+
     except Exception:
         raise HTTPException(
             status_code=401,
@@ -188,10 +153,7 @@ def logout(user=Depends(get_current_user)):
     return None
 
 
-# -------------------------
-# Public route
-# -------------------------
-
+# Public endpoint
 @app.get("/public/info")
 def public_info():
     return {
@@ -199,15 +161,9 @@ def public_info():
     }
 
 
-# -------------------------
-# Protected routes
-# -------------------------
-
+# Protected profile endpoint
 @app.get("/protected/profile")
 def protected_profile(user=Depends(get_current_user)):
-    """
-    Return safe information about the authenticated user.
-    """
 
     return {
         "id": user.id,
@@ -216,11 +172,9 @@ def protected_profile(user=Depends(get_current_user)):
     }
 
 
+# Second protected endpoint
 @app.get("/protected/dashboard")
 def protected_dashboard(user=Depends(get_current_user)):
-    """
-    Example of another protected route.
-    """
 
     return {
         "message": "Welcome to your protected dashboard!",
