@@ -1,6 +1,6 @@
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -109,3 +109,49 @@ def login(request: AuthRequest):
             status_code=401,
             detail="Invalid login credentials"
         )
+
+
+# -------------------------
+# Public and protected routes
+# -------------------------
+
+@app.get("/public/info")
+def public_info():
+    return {
+        "message": "Welcome stranger! This info is public."
+    }
+
+
+@app.get("/protected/profile")
+def protected_profile(authorization: str | None = Header(default=None)):
+
+    # Check whether the Authorization header exists
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Access token required"
+        )
+
+    # Check that the header uses Bearer format
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Access token required"
+        )
+
+    # Extract the token from "Bearer <token>"
+    token = authorization.replace("Bearer ", "", 1).strip()
+
+    # Make sure a token was actually provided
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Access token required"
+        )
+
+    # Stage 2 only checks that a token was supplied.
+    # Actual token verification will be added in Stage 3.
+    return {
+        "message": "Token received",
+        "token_present": True
+    }
