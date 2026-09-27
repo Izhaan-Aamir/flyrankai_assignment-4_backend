@@ -112,7 +112,7 @@ def login(request: AuthRequest):
 
 
 # -------------------------
-# Public and protected routes
+# Public route
 # -------------------------
 
 @app.get("/public/info")
@@ -121,6 +121,10 @@ def public_info():
         "message": "Welcome stranger! This info is public."
     }
 
+
+# -------------------------
+# Protected route
+# -------------------------
 
 @app.get("/protected/profile")
 def protected_profile(authorization: str | None = Header(default=None)):
@@ -149,9 +153,24 @@ def protected_profile(authorization: str | None = Header(default=None)):
             detail="Access token required"
         )
 
-    # Stage 2 only checks that a token was supplied.
-    # Actual token verification will be added in Stage 3.
-    return {
-        "message": "Token received",
-        "token_present": True
-    }
+    # Verify the access token with Supabase
+    try:
+        response = supabase.auth.get_user(token)
+
+        if response.user is None:
+            raise Exception("User not found")
+
+        user = response.user
+
+        # Return only safe user information
+        return {
+            "id": user.id,
+            "email": user.email,
+            "created_at": user.created_at
+        }
+
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
